@@ -1,12 +1,3 @@
-const defaultOptions = {
-    loadPath: "/locales/{{lng}}/{{ns}}.json", // Where the translation files get loaded from
-    addPath: "/locales/{{lng}}/{{ns}}.missing.json", // Where the missing translation files get generated
-    delay: 300
-};
-// Electron-specific; must match mainIpc
-const readChannel = "ReadFile";
-const writeChannel = "WriteChannel";
-
 /**
  * Fast UUID generator, RFC4122 version 4 compliant.
  * @author Jeff Ward (jcward.com).
@@ -33,14 +24,22 @@ var UUID = (function () {
 })();
 
 
+const defaultOptions = {
+    loadPath: "/locales/{{lng}}/{{ns}}.json", // Where the translation files get loaded from
+    addPath: "/locales/{{lng}}/{{ns}}.missing.json", // Where the missing translation files get generated
+    delay: 300
+};
+// Electron-specific; must match mainIpc
+const readChannel = "ReadFile";
+const writeChannel = "WriteChannel";
 
-// Writes to the translation .json files
-let _writeFile = function (fs, filename, data, callback) {
-    fs.writeFile(filename, JSON.stringify(data), (error) => {
-        callback(error);
-    });
-    callback(null, "success");
-}
+// // Writes to the translation .json files
+// let _writeFile = function (fs, filename, data, callback) {
+//     fs.writeFile(filename, JSON.stringify(data), (error) => {
+//         callback(error);
+//     });
+//     callback(null, "success");
+// }
 
 // Template is found at: https://www.i18next.com/misc/creating-own-plugins#backend;
 // also took code from: https://github.com/i18next/i18next-node-fs-backend
@@ -55,8 +54,6 @@ class Backend {
         this.writeCallbacks = {};
         this.writeQueue = {};
         this.writeQueueBuffer = {};
-
-        this.writeManager = new WriteManager(this.backendOptions.ipcRenderer);
     }
 
     init(services, backendOptions, i18nextOptions) {
@@ -85,8 +82,8 @@ class Backend {
             let callback;
 
             if (args.error) {
-                callback = this.readCallbacks[key].callback;
-                delete this.readCallbacks[key];
+                callback = this.readCallbacks[args.key].callback;
+                delete this.readCallbacks[args.key];
                 callback(error);
             } else {
                 let result;
@@ -95,13 +92,32 @@ class Backend {
                     result = JSON.parse(args.data);
                 } catch (parseError) {
                     parseError.message = `Error parsing '${filename}'. Message: '${parseError}'.`;
-                    callback = this.readCallbacks[key].callback;
-                    delete this.readCallbacks[key];
-                    this.readCallbacks[key].callback(parseError);
+                    callback = this.readCallbacks[args.key].callback;
+                    delete this.readCallbacks[args.key];
+                    callback(parseError);
                 }
-                callback = this.readCallbacks[key].callback;
-                delete this.readCallbacks[key];
-                this.readCallbacks[key].callback(null, result);
+                callback = this.readCallbacks[args.key].callback;
+                delete this.readCallbacks[args.key];
+                callback(null, result);
+            }
+        });
+
+        ipcRenderer.on(writeChannel, (IpcRendererEvent, args) => {
+            // args:
+            // {
+            //   key
+            //   error
+            // }
+            let callback;
+
+            if (args.error) {
+                callback = this.writeCallbacks[args.key].callback;
+                delete this.writeCallbacks[args.key];
+                callback(error);
+            } else {
+                callback = this.writeCallbacks[args.key].callback;
+                delete this.writeCallbacks[args.key];
+                callback(null, true);
             }
         });
     }
@@ -110,23 +126,49 @@ class Backend {
         setTimeout(func.apply(null, args), delay);
     }
 
-    write(updates, filename) {
+    write(filename) {
         // Lock filename
         this.writeQueue[filename].locked = true;
 
-        requestFileRead(filename, (error, data) => {
-            if (error) throw "err!";
+        this.requestFileRead(filename, (error, data) => {
+            if (error){
+                this.writeQueue[filename].locked = false;
+                throw "err!";
+            }
 
+            let updates = this.writeQueue[filename].updates;
+            let callbacks = [];
+            for (let i = 0; i < updates.length; i++){
+                data[updates[i][key]] = updates[i][fallbackValue];
+                callbacks.push(updates[i].callback);
+            }
 
+            this.requestFileWrite(filename, data, callbacks, () => {
+                
+                // Move items from buffer
+                let bufferKeys = Object.keys(this.writeQueueBuffer);
+                for (let j = 0; j < bufferKeys; j++){
+                    this.writeQueue[bufferKeys[j]] = this.writeQueueBuffer[bufferKeys[j]];
+                    delete this.writeQueueBuffer[bufferKeys[j]];
+                }
+
+                // Unlock filename
+                this.writeQueue[filename].locked = false;
+
+                // Re-add timeout if elements exist
+                if (Object.keys(this.writeQueue[filename]) > 0){
+                    this.writeQueue[filename].timeout = this.writeWrapper(this.write, [filename], this.backendOptions.delay);
+                }
+            });
         });
 
         // Unlock filename
         this.writeQueue[filename].locked = false;
     }
 
+    // Adds requests to the queue to update files
     addToWriteQueue(filename, key, fallbackValue, callback) {
         let obj; // holds properties for the queue
-        let writeArgs; // holds func args for the .write method
 
         if (typeof this.writeQueue[filename] === "undefined") {
             obj = {
@@ -137,10 +179,9 @@ class Backend {
                 }],
                 locked: false
             };
-            writeArgs = [obj.updates, filename];
 
             // re-update timeout
-            obj.timeout = this.writeWrapper(write, writeArgs, this.delay);
+            obj.timeout = this.writeWrapper(this.write, [filename], this.backendOptions.delay);
             this.writeQueue[filename] = obj;
         } else if (!this.writeQueue[filename].locked) {
             obj = this.writeQueue[filename];
@@ -149,10 +190,9 @@ class Backend {
                 fallbackValue,
                 callback
             });
-            writeArgs = [obj.updates, filename];
 
             // re-update timeout
-            obj.timeout = this.writeWrapper(write, writeArgs, this.delay);
+            obj.timeout = this.writeWrapper(this.write, [filename], this.backendOptions.delay);
             this.writeQueue[filename] = obj;
         } else {
 
@@ -175,6 +215,33 @@ class Backend {
                     }]
                 });
             }
+        }
+    }
+
+    requestFileWrite(filename, data, callbacks, onCompleteCallback = null){
+        const {
+            ipcRenderer
+        } = this.backendOptions;
+
+        // Save the callback for this request so we
+        // can execute once the ipcRender process returns
+        // with a value from the ipcMain process
+        for (let i = 0; i < callbacks.length; i++){
+            var key = `${UUID.generate()}`;
+            this.writeCallbacks[key] = {
+                callback: callbacks[i]
+            };
+    
+            // Send out the message to the ipcMain process
+            ipcRenderer.send(writeChannel, {
+                key,
+                filename,
+                data
+            });
+        }
+
+        if (onCompleteCallback !== null){
+            onCompleteCallback();
         }
     }
 
