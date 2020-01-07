@@ -150,6 +150,7 @@ class Backend {
                 for (let j = 0; j < bufferKeys; j++){
                     this.writeQueue[bufferKeys[j]] = this.writeQueueBuffer[bufferKeys[j]];
                     delete this.writeQueueBuffer[bufferKeys[j]];
+                    delete this.writeQueue[bufferKeys[j]];
                 }
 
                 // Unlock filename
