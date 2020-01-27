@@ -14,6 +14,7 @@ export const readFileRequest = "ReadFile-Request";
 export const writeFileRequest = "WriteFile-Request";
 export const readFileResponse = "ReadFile-Response";
 export const writeFileResponse = "WriteFile-Response";
+export const changeLanguageRequest = "ChangeLanguage-Request";
 
 // This is the code that will go into the preload.js file
 // in order to set up the contextBridge api
@@ -31,6 +32,10 @@ export const preloadBindings = function (ipcRenderer) {
                 // Deliberately strip event as it includes "sender"
                 ipcRenderer.on(channel, (event, args) => func(args));
             }
+        },
+        onLanguageChange: (func) => {
+            // Deliberately strip event as it includes "sender"
+            ipcRenderer.on(changeLanguageRequest, (event, args) => func(args));
         }
     };
 };
