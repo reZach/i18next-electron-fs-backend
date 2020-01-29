@@ -45,21 +45,33 @@ export const preloadBindings = function (ipcRenderer) {
 export const mainBindings = function (ipcMain, browserWindow, fs) {
     ipcMain.on(readFileRequest, (IpcMainEvent, args) => {
         let callback = function (error, data) {
-            this.webContents.send(readFileResponse, {
-                key: args.key,
-                error,
-                data: typeof data !== "undefined" && data !== null ? data.toString() : ""
-            });
+
+            // Upon closing/re-opening the window on mac os,
+            // the browser window is destroyed for a moment
+            // before re-created again
+            if (!this.isDestroyed()){
+                this.webContents.send(readFileResponse, {
+                    key: args.key,
+                    error,
+                    data: typeof data !== "undefined" && data !== null ? data.toString() : ""
+                });
+            } else {
+                console.log("[i18next-electron-fs-backend]: BrowserWindow was destroyed, could not respond to read file request.");
+            }
         }.bind(browserWindow);
         fs.readFile(args.filename, callback);
     });
 
     ipcMain.on(writeFileRequest, (IpcMainEvent, args) => {
         let callback = function (error) {
-            this.webContents.send(writeFileResponse, {
-                key: args.key,
-                error
-            });
+            if (!this.isDestroyed()){
+                this.webContents.send(writeFileResponse, {
+                    key: args.key,
+                    error
+                });
+            } else {
+                console.log("[i18next-electron-fs-backend]: BrowserWindow was destroyed, could not respond to write file request.");
+            }
         }.bind(browserWindow);
 
 
