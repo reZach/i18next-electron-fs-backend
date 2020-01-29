@@ -45,33 +45,21 @@ export const preloadBindings = function (ipcRenderer) {
 export const mainBindings = function (ipcMain, browserWindow, fs) {
     ipcMain.on(readFileRequest, (IpcMainEvent, args) => {
         let callback = function (error, data) {
-
-            // Upon closing/re-opening the window on mac os,
-            // the browser window is destroyed for a moment
-            // before re-created again
-            if (!this.isDestroyed()){
-                this.webContents.send(readFileResponse, {
-                    key: args.key,
-                    error,
-                    data: typeof data !== "undefined" && data !== null ? data.toString() : ""
-                });
-            } else {
-                console.log("[i18next-electron-fs-backend]: BrowserWindow was destroyed, could not respond to read file request.");
-            }
+            this.webContents.send(readFileResponse, {
+                key: args.key,
+                error,
+                data: typeof data !== "undefined" && data !== null ? data.toString() : ""
+            });
         }.bind(browserWindow);
         fs.readFile(args.filename, callback);
     });
 
     ipcMain.on(writeFileRequest, (IpcMainEvent, args) => {
         let callback = function (error) {
-            if (!this.isDestroyed()){
-                this.webContents.send(writeFileResponse, {
-                    key: args.key,
-                    error
-                });
-            } else {
-                console.log("[i18next-electron-fs-backend]: BrowserWindow was destroyed, could not respond to write file request.");
-            }
+            this.webContents.send(writeFileResponse, {
+                key: args.key,
+                error
+            });
         }.bind(browserWindow);
 
 
@@ -88,6 +76,13 @@ export const mainBindings = function (ipcMain, browserWindow, fs) {
         });
     });
 };
+
+// Clears the bindings from ipcMain;
+// in case app is closed/reopened (only on macos)
+export const clearMainBindings = function(ipcMain){
+    ipcMain.removeAllListeners(readFileRequest);
+    ipcMain.removeAllListeners(writeFileRequest);
+}
 
 // Template is found at: https://www.i18next.com/misc/creating-own-plugins#backend;
 // also took code from: https://github.com/i18next/i18next-node-fs-backend
