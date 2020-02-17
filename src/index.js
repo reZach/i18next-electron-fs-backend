@@ -30,7 +30,23 @@ export const preloadBindings = function (ipcRenderer) {
             let validChannels = [readFileResponse, writeFileResponse];
             if (validChannels.includes(channel)) {
                 // Deliberately strip event as it includes "sender"
-                ipcRenderer.on(channel, (event, args) => func(args));
+                try {
+                    ipcRenderer.on(channel, (event, args) => {
+                
+                        try{
+                            console.log("success");
+                            console.log(channel);
+                            return func(args);
+                        } catch (err){
+                            console.error(err);
+                            console.error(channel);
+                        }                    
+                    });
+                } catch (e){
+                    console.error(e);
+                    console.error("failing ipcrenderer.on");
+                }
+                
             }
         },
         onLanguageChange: (func) => {
@@ -124,6 +140,7 @@ class Backend {
             // Don't know why we need this line;
             // upon initialization, the i18next library
             // ends up in this .on([channel], args) method twice
+            debugger;
             if (typeof this.readCallbacks[args.key] === "undefined") return;
 
             let callback;
@@ -163,6 +180,9 @@ class Backend {
 
             let callback;
 
+            debugger;
+            console.log("writefile callback");
+            console.log(typeof this.writeCallbacks[args.key] === "undefined");
             // Write methods don't have any callbacks from what I've seen,
             // so this is called more than I thought; but necessary!
             if (typeof this.writeCallbacks[args.key] === "undefined") return;
@@ -179,172 +199,45 @@ class Backend {
         });
     }
 
-    // Calls a function with args with a set delay
-    writeWrapper(func, args, delay) {
-        setTimeout(func.apply(this, args), delay);
-    }
-
-    // Writes a given translation data to a file
-    write(filename) {
-
-        // Lock filename
-        this.writeQueue[filename].locked = true;
-
-        // First, get the existing translation data from file
-        this.requestFileRead(filename, (error, data) => {
-
-            if (error) {
-                this.writeQueue[filename].locked = false;
-                throw `Error occurred when trying to read file '${filename}': ${error}.`;
-            }
-
-            let keySeparator = !!this.i18nextOptions.keySeparator; // Do we have a key separator or not?
-            let updates = this.writeQueue[filename].updates;
-            let callbacks = [];
-            for (let i = 0; i < updates.length; i++) {
-
-                // If we have no key separator set, simply update the translation value
-                if (!keySeparator) {
-                    data[updates[i].key] = updates[i].fallbackValue;
-                } else {
-                    // Created the nested object structure based on the key separator, and merge that
-                    // into the existing translation data
-                    data = mergeNested(data, updates[i].key, this.i18nextOptions.keySeparator, updates[i].fallbackValue);
-                }
-
-                // Keep track of any callbacks we need to do
-                if (updates[i].callback !== null) callbacks.push(updates[i].callback);
-            }
-
-            // We just applied all updates from the writeQueue,
-            // so delete this object so we can copy any pending
-            // updates from the writeQueueBuffer down below
-            delete this.writeQueue[filename];
-
-
-            // Calling an anonymous function so we can bind 'this' to
-            // this class instance and have access to variables inside
-            let anonymousBind = function () {
-
-                // Move items from buffer
-                let bufferKeys = Object.keys(this.writeQueueBuffer);
-                for (let j = 0; j < bufferKeys.length; j++) {
-                    this.writeQueue[bufferKeys[j]] = this.writeQueueBuffer[bufferKeys[j]];
-                    delete this.writeQueueBuffer[bufferKeys[j]];
-                }
-
-                // If any items were copied into the writeQueue, we should
-                // unlock the queue and start the timeout to write to file
-                if (typeof this.writeQueue[filename] !== "undefined" && Object.keys(this.writeQueue[filename]).length > 0) {
-                    // Unlock filename
-                    this.writeQueue[filename].locked = false;
-
-                    // Re-add timeout if elements exist
-                    this.writeQueue[filename].timeout = this.writeWrapper(this.write, [filename], this.backendOptions.delay);
-                }
-            }.bind(this);
-            this.requestFileWrite(filename, data, callbacks, anonymousBind);
-        });
-
-        // Unlock filename
-        this.writeQueue[filename].locked = false;
-    }
-
-    // Adds requests to the queue to update files;
-    // depending on the state of the writeQueue, we will
-    // insert these requests to write to file in different
-    // places
-    addToWriteQueue(filename, key, fallbackValue, callback) {
-        let obj; // holds properties for the queue
-
-
-        if (typeof this.writeQueue[filename] === "undefined") {
-            obj = {
-                updates: [{
-                    key,
-                    fallbackValue,
-                    callback
-                }],
-                locked: false
-            };
-
-            // re-update timeout
-            this.writeQueue[filename] = obj;
-            obj.timeout = this.writeWrapper(this.write, [filename], this.backendOptions.delay);
-        } else if (!this.writeQueue[filename].locked) {
-            obj = this.writeQueue[filename];
-            obj.updates.push({
-                key,
-                fallbackValue,
-                callback
-            });
-
-            // re-update timeout
-            this.writeQueue[filename] = obj;
-            obj.timeout = this.writeWrapper(this.write, [filename], this.backendOptions.delay);
-        } else {
-
-            // Hold any updates if we are currently locked on that filename;
-            // we'll run these when we can later
-            if (typeof this.writeQueueBuffer[filename] === "undefined") {
-                this.writeQueueBuffer[filename] = {
-                    updates: [{
-                        key,
-                        fallbackValue,
-                        callback
-                    }]
-                };
-            } else {
-                this.writeQueueBuffer[filename].updates.push({
-                    updates: [{
-                        key,
-                        fallbackValue,
-                        callback
-                    }]
-                });
-            }
-        }
-    }
-
-    requestFileWrite(filename, data, callbacks, onCompleteCallback = null) {
+    // Writes a given translation to file
+    write(filename, key, fallbackValue, callback) {        
         const {
             i18nextElectronBackend
         } = this.backendOptions;
 
-
-        // Save the callback for this request so we
-        // can execute once the ipcRender process returns
-        // with a value from the ipcMain process
-        var key;
-        if (callbacks.length > 0) {
-            for (let i = 0; i < callbacks.length; i++) {
-                key = `${UUID.generate()}`;
-                this.writeCallbacks[key] = {
-                    callback: callbacks[i]
-                };
-
-                // Send out the message to the ipcMain process
-                i18nextElectronBackend.send(writeFileRequest, {
-                    key,
-                    filename,
-                    data
-                });
+        // First, get the existing translation data from file
+        this.requestFileRead(filename, (error, data) => {
+            if (error) {
+                // todo
             }
-        } else {
-            key = `${UUID.generate()}`;
+
+            let keySeparator = !!this.i18nextOptions.keySeparator; // Do we have a key separator or not?
+
+            // If we have no key separator set, simply update the translation value
+            if (!keySeparator) {
+                data[key] = fallbackValue;
+            } else {
+                // Created the nested object structure based on the key separator, and merge that
+                // into the existing translation data
+                data = mergeNested(data, key, this.i18nextOptions.keySeparator, fallbackValue);
+            }
+
+            let key = `${UUID.generate()}`;
+            if (callback) {
+                console.warn('callback is true');
+                this.writeCallbacks[key] = {
+                    callback
+                };
+            }
 
             // Send out the message to the ipcMain process
+            debugger;
             i18nextElectronBackend.send(writeFileRequest, {
                 key,
                 filename,
                 data
             });
-        }
-
-        // Run a callback if present
-        if (onCompleteCallback !== null) {
-            onCompleteCallback();
-        }
+        });
     }
 
     // Reads a given translation file
@@ -369,7 +262,7 @@ class Backend {
     }
 
     // Reads a given translation file
-    read(language, namespace, callback) {
+    read(language, namespace, callback) {        
         const {
             loadPath
         } = this.backendOptions;
@@ -379,6 +272,7 @@ class Backend {
         });
 
         this.requestFileRead(filename, (error, data) => {
+            debugger;
             if (error) return callback(error, false); // no retry
             callback(null, data);
         });
@@ -397,13 +291,14 @@ class Backend {
         let filename;
         languages = typeof languages === "string" ? [languages] : languages;
 
+        // Create the missing translation for all languages
         for (let i = 0; i < languages.length; i++) {
             filename = this.services.interpolator.interpolate(addPath, {
                 lng: languages[i],
                 ns: namespace
             });
 
-            this.addToWriteQueue(filename, key, fallbackValue, callback);
+            this.write(filename, key, fallbackValue, callback);
         }
     }
 }
