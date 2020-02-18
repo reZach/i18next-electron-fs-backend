@@ -5,6 +5,7 @@ import {
 
 // CONFIGS
 const defaultOptions = {
+    debug: false,
     loadPath: "/locales/{{lng}}/{{ns}}.json", // Where the translation files get loaded from
     addPath: "/locales/{{lng}}/{{ns}}.missing.json", // Where the missing translation files get generated
     delay: 300 // Delay before translations are written to file
@@ -30,23 +31,14 @@ export const preloadBindings = function (ipcRenderer) {
             let validChannels = [readFileResponse, writeFileResponse];
             if (validChannels.includes(channel)) {
                 // Deliberately strip event as it includes "sender"
-                try {
-                    ipcRenderer.on(channel, (event, args) => {
-                
-                        try{
-                            console.log("success");
-                            console.log(channel);
-                            return func(args);
-                        } catch (err){
-                            console.error(err);
-                            console.error(channel);
-                        }                    
-                    });
-                } catch (e){
-                    console.error(e);
-                    console.error("failing ipcrenderer.on");
-                }
-                
+                ipcRenderer.on(channel, (event, args) => {
+                    try {
+                        func(args);
+                    } catch (error) {
+                        console.error(channel);
+                        console.error(error);
+                    }
+                });
             }
         },
         onLanguageChange: (func) => {
@@ -61,6 +53,11 @@ export const preloadBindings = function (ipcRenderer) {
 export const mainBindings = function (ipcMain, browserWindow, fs) {
     ipcMain.on(readFileRequest, (IpcMainEvent, args) => {
         let callback = function (error, data) {
+            console.log({
+                key: args.key,
+                error,
+                data: typeof data !== "undefined" && data !== null ? data.toString() : ""
+            });
             this.webContents.send(readFileResponse, {
                 key: args.key,
                 error,
@@ -118,6 +115,11 @@ class Backend {
         };
         this.i18nextOptions = i18nextOptions;
 
+        // log-related
+        const logPrepend = "[i18next-electron-fs-backend:";
+        this.mainLog = `${logPrepend}main]=>`;
+        this.rendererLog = `${logPrepend}renderer]=>`;
+
         this.setupIpcBindings();
     }
 
@@ -140,7 +142,6 @@ class Backend {
             // Don't know why we need this line;
             // upon initialization, the i18next library
             // ends up in this .on([channel], args) method twice
-            debugger;
             if (typeof this.readCallbacks[args.key] === "undefined") return;
 
             let callback;
@@ -180,9 +181,6 @@ class Backend {
 
             let callback;
 
-            debugger;
-            console.log("writefile callback");
-            console.log(typeof this.writeCallbacks[args.key] === "undefined");
             // Write methods don't have any callbacks from what I've seen,
             // so this is called more than I thought; but necessary!
             if (typeof this.writeCallbacks[args.key] === "undefined") return;
@@ -200,15 +198,17 @@ class Backend {
     }
 
     // Writes a given translation to file
-    write(filename, key, fallbackValue, callback) {        
+    write(filename, key, fallbackValue, callback) {
         const {
+            debug,
             i18nextElectronBackend
         } = this.backendOptions;
 
         // First, get the existing translation data from file
-        this.requestFileRead(filename, (error, data) => {
+        var anonymous = function(error, data) {
             if (error) {
-                // todo
+                console.error(`${this.rendererLog} encountered error when trying to read file '${filename}' before writing missing translation ('${key}'/'${fallbackValue}') to file. Please resolve this error so missing translation values can be written to file. Error: '${error}'.`);
+                return;
             }
 
             let keySeparator = !!this.i18nextOptions.keySeparator; // Do we have a key separator or not?
@@ -224,20 +224,20 @@ class Backend {
 
             let key = `${UUID.generate()}`;
             if (callback) {
-                console.warn('callback is true');
                 this.writeCallbacks[key] = {
                     callback
                 };
             }
 
             // Send out the message to the ipcMain process
-            debugger;
+            debug ? console.log(`${this.rendererLog} requesting the missing key '${key}' be written to file '${filename}'.`) : null;
             i18nextElectronBackend.send(writeFileRequest, {
                 key,
                 filename,
                 data
             });
-        });
+        }.bind(this);
+        this.requestFileRead(filename, anonymous);
     }
 
     // Reads a given translation file
@@ -251,7 +251,7 @@ class Backend {
         // with a value from the ipcMain process
         let key = `${UUID.generate()}`;
         this.readCallbacks[key] = {
-            callback: callback
+            callback
         };
 
         // Send out the message to the ipcMain process
@@ -262,7 +262,7 @@ class Backend {
     }
 
     // Reads a given translation file
-    read(language, namespace, callback) {        
+    read(language, namespace, callback) {
         const {
             loadPath
         } = this.backendOptions;
@@ -272,8 +272,7 @@ class Backend {
         });
 
         this.requestFileRead(filename, (error, data) => {
-            debugger;
-            if (error) return callback(error, false); // no retry
+            if (error) return callback(error, false); // no retry\
             callback(null, data);
         });
     }
