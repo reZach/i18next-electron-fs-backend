@@ -272,7 +272,8 @@ class Backend {
         });
 
         this.requestFileRead(filename, (error, data) => {
-            if (error) return callback(error, false); // no retry\
+            if (error) return callback(error, false); // no retry
+            debugger; // put here so you can step into i18n code
             callback(null, data);
         });
     }
