@@ -78,6 +78,13 @@ export const mainBindings = function (ipcMain, browserWindow, fs) {
     });
 };
 
+// Clears the bindings from ipcMain;
+// in case app is closed/reopened (only on macos)
+export const clearMainBindings = function(ipcMain){
+    ipcMain.removeAllListeners(readFileRequest);
+    ipcMain.removeAllListeners(writeFileRequest);
+}
+
 // Template is found at: https://www.i18next.com/misc/creating-own-plugins#backend;
 // also took code from: https://github.com/i18next/i18next-node-fs-backend
 class Backend {
