@@ -97,7 +97,6 @@ These are options that are configurable, all values below are defaults.
 {
     debug: false, // If you'd like to show diagnostic messages
     loadPath: "/locales/{{lng}}/{{ns}}.json", // Where the translation files get loaded from
-    addPath: "/locales/{{lng}}/{{ns}}.missing.json", // Where the missing translation files get generated
-    delay: 300 // Delay before translations are written to file
+    addPath: "/locales/{{lng}}/{{ns}}.missing.json" // Where the missing translation files get generated    
 }
 ```
