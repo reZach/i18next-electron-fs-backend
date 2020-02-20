@@ -203,7 +203,7 @@ class Backend {
             debug,
             i18nextElectronBackend
         } = this.backendOptions;
-
+        
         // First, get the existing translation data from file
         var anonymous = function(error, data) {
             if (error) {
@@ -222,9 +222,9 @@ class Backend {
                 data = mergeNested(data, key, this.i18nextOptions.keySeparator, fallbackValue);
             }
 
-            let key = `${UUID.generate()}`;
+            let writeKey = `${UUID.generate()}`;
             if (callback) {
-                this.writeCallbacks[key] = {
+                this.writeCallbacks[writeKey] = {
                     callback
                 };
             }
@@ -232,12 +232,12 @@ class Backend {
             // Send out the message to the ipcMain process
             debug ? console.log(`${this.rendererLog} requesting the missing key '${key}' be written to file '${filename}'.`) : null;
             i18nextElectronBackend.send(writeFileRequest, {
-                key,
+                writeKey,
                 filename,
                 data
             });
         }.bind(this);
-        this.requestFileRead(filename, anonymous);
+        this.requestFileRead(filename, anonymous);     
     }
 
     // Reads a given translation file
@@ -273,7 +273,6 @@ class Backend {
 
         this.requestFileRead(filename, (error, data) => {
             if (error) return callback(error, false); // no retry
-            debugger; // put here so you can step into i18n code
             callback(null, data);
         });
     }
