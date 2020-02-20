@@ -31,14 +31,7 @@ export const preloadBindings = function (ipcRenderer) {
             let validChannels = [readFileResponse, writeFileResponse];
             if (validChannels.includes(channel)) {
                 // Deliberately strip event as it includes "sender"
-                ipcRenderer.on(channel, (event, args) => {
-                    try {
-                        func(args);
-                    } catch (error) {
-                        console.error(channel);
-                        console.error(error);
-                    }
-                });
+                ipcRenderer.on(channel, (event, args) => func(args));
             }
         },
         onLanguageChange: (func) => {
@@ -53,11 +46,6 @@ export const preloadBindings = function (ipcRenderer) {
 export const mainBindings = function (ipcMain, browserWindow, fs) {
     ipcMain.on(readFileRequest, (IpcMainEvent, args) => {
         let callback = function (error, data) {
-            console.log({
-                key: args.key,
-                error,
-                data: typeof data !== "undefined" && data !== null ? data.toString() : ""
-            });
             this.webContents.send(readFileResponse, {
                 key: args.key,
                 error,
