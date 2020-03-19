@@ -1,14 +1,17 @@
 import {
+    cloneDeep
+} from "lodash";
+import {
     UUID,
-    mergeNested
+    mergeNested,
+    groupByArray
 } from "./utils";
 
 // CONFIGS
 const defaultOptions = {
     debug: false,
     loadPath: "/locales/{{lng}}/{{ns}}.json", // Where the translation files get loaded from
-    addPath: "/locales/{{lng}}/{{ns}}.missing.json", // Where the missing translation files get generated
-    delay: 300 // Delay before translations are written to file
+    addPath: "/locales/{{lng}}/{{ns}}.missing.json" // Where the missing translation files get generated
 };
 // Electron-specific; must match mainIpc
 export const readFileRequest = "ReadFile-Request";
@@ -58,7 +61,7 @@ export const mainBindings = function (ipcMain, browserWindow, fs) {
     ipcMain.on(writeFileRequest, (IpcMainEvent, args) => {
         let callback = function (error) {
             this.webContents.send(writeFileResponse, {
-                key: args.key,
+                keys: args.keys,
                 error
             });
         }.bind(browserWindow);
@@ -80,7 +83,7 @@ export const mainBindings = function (ipcMain, browserWindow, fs) {
 
 // Clears the bindings from ipcMain;
 // in case app is closed/reopened (only on macos)
-export const clearMainBindings = function(ipcMain){
+export const clearMainBindings = function (ipcMain) {
     ipcMain.removeAllListeners(readFileRequest);
     ipcMain.removeAllListeners(writeFileRequest);
 }
@@ -91,10 +94,12 @@ class Backend {
     constructor(services, backendOptions = {}, i18nextOptions = {}) {
         this.init(services, backendOptions, i18nextOptions);
 
-        this.readCallbacks = {};
-        this.writeCallbacks = {};
-        this.writeQueue = {};
-        this.writeQueueBuffer = {};
+        this.readCallbacks = {}; // Callbacks after reading a translation
+        this.writeCallbacks = {}; // Callbacks after writing a missing translation
+        this.writeTimeout; // A timer that will initate writing missing translations to files
+        this.writeQueue = []; // An array to hold missing translations before the writeTimeout occurs
+        this.writeQueueOverflow = []; // An array to hold missing translations while the writeTimeout's items are being written to file
+        this.useOverflow = false; // If true, we should insert missing translations into the writeQueueOverflow        
     }
 
     init(services, backendOptions, i18nextOptions) {
@@ -170,69 +175,82 @@ class Backend {
         i18nextElectronBackend.onReceive(writeFileResponse, (args) => {
             // args:
             // {
-            //   key
+            //   keys
             //   error
             // }
 
-            let callback;
+            let keys = args.keys;
+            for (let i = 0; i < keys.length; i++) {
+                let callback;
 
-            // Write methods don't have any callbacks from what I've seen,
-            // so this is called more than I thought; but necessary!
-            if (typeof this.writeCallbacks[args.key] === "undefined") return;
+                // Write methods don't have any callbacks from what I've seen,
+                // so this is called more than I thought; but necessary!
+                if (typeof this.writeCallbacks[keys[i]] === "undefined") return;
 
-            if (args.error) {
-                callback = this.writeCallbacks[args.key].callback;
-                delete this.writeCallbacks[args.key];
-                callback(args.error);
-            } else {
-                callback = this.writeCallbacks[args.key].callback;
-                delete this.writeCallbacks[args.key];
-                callback(null, true);
+                if (args.error) {
+                    callback = this.writeCallbacks[keys[i]].callback;
+                    delete this.writeCallbacks[keys[i]];
+                    callback(args.error);
+                } else {
+                    callback = this.writeCallbacks[keys[i]].callback;
+                    delete this.writeCallbacks[keys[i]];
+                    callback(null, true);
+                }
             }
         });
     }
 
     // Writes a given translation to file
-    write(filename, key, fallbackValue, callback) {
+    write(writeQueue) {
         const {
             debug,
             i18nextElectronBackend
         } = this.backendOptions;
-        
-        // First, get the existing translation data from file
-        var anonymous = function(error, data) {
-            if (error) {
-                console.error(`${this.rendererLog} encountered error when trying to read file '${filename}' before writing missing translation ('${key}'/'${fallbackValue}') to file. Please resolve this error so missing translation values can be written to file. Error: '${error}'.`);
-                return;
-            }
 
-            let keySeparator = !!this.i18nextOptions.keySeparator; // Do we have a key separator or not?
+        // Group by filename so we can make one request
+        // for all changes within a given file
+        let toWork = groupByArray(writeQueue, "filename");
 
-            // If we have no key separator set, simply update the translation value
-            if (!keySeparator) {
-                data[key] = fallbackValue;
-            } else {
-                // Created the nested object structure based on the key separator, and merge that
-                // into the existing translation data
-                data = mergeNested(data, key, this.i18nextOptions.keySeparator, fallbackValue);
-            }
+        for (let i = 0; i < toWork.length; i++) {
+            var anonymous = function (error, data) {
+                if (error) {
+                    console.error(`${this.rendererLog} encountered error when trying to read file '${filename}' before writing missing translation ('${key}'/'${fallbackValue}') to file. Please resolve this error so missing translation values can be written to file. Error: '${error}'.`);
+                    return;
+                }
 
-            let writeKey = `${UUID.generate()}`;
-            if (callback) {
-                this.writeCallbacks[writeKey] = {
-                    callback
-                };
-            }
+                let keySeparator = !!this.i18nextOptions.keySeparator; // Do we have a key separator or not?
+                let writeKeys = [];
 
-            // Send out the message to the ipcMain process
-            debug ? console.log(`${this.rendererLog} requesting the missing key '${key}' be written to file '${filename}'.`) : null;
-            i18nextElectronBackend.send(writeFileRequest, {
-                writeKey,
-                filename,
-                data
-            });
-        }.bind(this);
-        this.requestFileRead(filename, anonymous);     
+                for (let j = 0; j < toWork[i].values.length; j++) {
+
+                    // If we have no key separator set, simply update the translation value
+                    if (!keySeparator) {
+                        data[toWork[i].values[j].key] = toWork[i].values[j].fallbackValue;
+                    } else {
+                        // Created the nested object structure based on the key separator, and merge that
+                        // into the existing translation data
+                        data = mergeNested(data, toWork[i].values[j].key, this.i18nextOptions.keySeparator, toWork[i].values[j].fallbackValue);
+                    }
+
+                    let writeKey = `${UUID.generate()}`;
+                    if (toWork[i].values[j].callback) {
+                        this.writeCallbacks[writeKey] = {
+                            callback: toWork[i].values[j].callback
+                        };
+                        writeKeys.push(writeKey);
+                    }
+                }
+
+                // Send out the message to the ipcMain process
+                debug ? console.log(`${this.rendererLog} requesting the missing key '${key}' be written to file '${filename}'.`) : null;
+                i18nextElectronBackend.send(writeFileRequest, {
+                    keys: writeKeys,
+                    filename: toWork[i].key,
+                    data
+                });
+            }.bind(this);
+            this.requestFileRead(toWork[i].key, anonymous);
+        }
     }
 
     // Reads a given translation file
@@ -292,7 +310,53 @@ class Backend {
                 ns: namespace
             });
 
-            this.write(filename, key, fallbackValue, callback);
+            // If we are currently writing missing translations from writeQueue,
+            // temporarily store the requests in writeQueueOverflow until we are
+            // done writing to file
+            if (this.useOverflow) {
+                this.writeQueueOverflow.push({
+                    filename,
+                    key,
+                    fallbackValue,
+                    callback
+                });
+            } else {
+                this.writeQueue.push({
+                    filename,
+                    key,
+                    fallbackValue,
+                    callback
+                });
+            }
+        }
+
+        // Fire up the timeout to process items to write
+        if (this.writeQueue.length > 0 && !this.useOverflow) {
+
+            // Clear out any existing timeout if we are still getting translations to write
+            if (typeof this.writeTimeout !== "undefined") {
+                clearInterval(this.writeTimeout);
+            }
+
+            this.writeTimeout = setInterval(function () {
+
+                // Write writeQueue entries, then after,
+                // fill in any from the writeQueueOverflow
+                if (this.writeQueue.length > 0){
+                    this.write(cloneDeep(this.writeQueue));                    
+                }
+                this.writeQueue = cloneDeep(this.writeQueueOverflow);
+                this.writeQueueOverflow = [];
+
+                if (this.writeQueue.length === 0) {
+                    
+                    // Clear timer
+                    clearInterval(this.writeTimeout);
+                    delete this.writeTimeout;
+                    this.useOverflow = false;
+                }
+            }.bind(this), 1000);
+            this.useOverflow = true;
         }
     }
 }
