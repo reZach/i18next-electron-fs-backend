@@ -55,7 +55,7 @@ export const mainBindings = function (ipcMain, browserWindow, fs) {
                 data: typeof data !== "undefined" && data !== null ? data.toString() : ""
             });
         }.bind(browserWindow);
-        fs.readFile(args.filename, callback);
+        fs.readFile(args.filename, "utf8", callback);
     });
 
     ipcMain.on(writeFileRequest, (IpcMainEvent, args) => {
@@ -266,7 +266,7 @@ class Backend {
             }
         } else {
             for (let i = 0; i < toWork.length; i++) {
-                fs.readFile(toWork[i].key, (error, data) => {
+                this.fs.readFile(toWork[i].key, "utf8", (error, data) => {
                     if (error) {
                         console.error(`${this.rendererLog} encountered error when trying to read file '${filename}' before writing missing translation ('${key}'/'${fallbackValue}') to file. Please resolve this error so missing translation values can be written to file. Error: '${error}'.`);
                         return;
@@ -305,7 +305,7 @@ class Backend {
                     this.fs.mkdir(root, {
                         recursive: true
                     }, (error) => {
-                        fs.writeFile(toWork[i].key, JSON.stringify(data), (error) => {
+                        this.fs.writeFile(toWork[i].key, JSON.stringify(data), (error) => {
 
                             if (error) {
                                 for (let k = 0; k < writeCallbacks.length; k++) {
@@ -350,10 +350,21 @@ class Backend {
             loadPath,
             i18nextElectronBackend
         } = this.backendOptions;
-        let filename = this.services.interpolator.interpolate(loadPath, {
+        const filename = this.services.interpolator.interpolate(loadPath, {
             lng: language,
             ns: namespace
         });
+
+        // Handle initImmediate option
+        if (this.i18nextOptions.initImmediate === false) {
+          try {
+            const data = this.fs.readFileSync(filename, {encoding: "utf8"})
+            callback(null, data);
+          } catch (error) {
+            callback(error, false); // no retry
+          }
+          return;
+        }
 
         if (typeof i18nextElectronBackend !== "undefined") {
             this.requestFileRead(filename, (error, data) => {
@@ -361,9 +372,9 @@ class Backend {
                 callback(null, data);
             });
         } else {
-            this.fs.readFile(filename, (error, data) => {
+            this.fs.readFile(filename, "utf8", (error, data) => {
                 if (error) return callback(error, false); // no retry
-                callback(null, data);
+                callback(null, JSON.parse(data));
             });
         }
     }
