@@ -224,6 +224,7 @@ class Backend {
         let toWork = groupByArray(writeQueue, "filename");
 
         if (typeof i18nextElectronBackend !== "undefined") {
+            // For when we are in the renderer process
             for (let i = 0; i < toWork.length; i++) {
                 var anonymous = function (error, data) {
                     if (error) {
@@ -265,8 +266,9 @@ class Backend {
                 this.requestFileRead(toWork[i].key, anonymous);
             }
         } else {
+            // For when we are in the main process
             for (let i = 0; i < toWork.length; i++) {
-                this.fs.readFile(toWork[i].key, "utf8", (error, data) => {
+                fs.readFile(toWork[i].key, "utf8", (error, data) => {
                     if (error) {
                         console.error(`${this.rendererLog} encountered error when trying to read file '${filename}' before writing missing translation ('${key}'/'${fallbackValue}') to file. Please resolve this error so missing translation values can be written to file. Error: '${error}'.`);
                         return;
@@ -372,6 +374,7 @@ class Backend {
                 callback(null, data);
             });
         } else {
+            // We use 'fs' directly here since we do not have access to send ipc messages in the main electron process
             this.fs.readFile(filename, "utf8", (error, data) => {
                 if (error) return callback(error, false); // no retry
                 callback(null, JSON.parse(data));
