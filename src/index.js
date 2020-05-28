@@ -55,7 +55,7 @@ export const mainBindings = function (ipcMain, browserWindow, fs) {
                 data: typeof data !== "undefined" && data !== null ? data.toString() : ""
             });
         }.bind(browserWindow);
-        fs.readFile(args.filename, callback);
+        fs.readFile(args.filename, "utf8", callback);
     });
 
     ipcMain.on(writeFileRequest, (IpcMainEvent, args) => {
@@ -103,7 +103,7 @@ class Backend {
     }
 
     init(services, backendOptions, i18nextOptions) {
-        if (typeof window.api.i18nextElectronBackend === "undefined") {
+        if (typeof window !== "undefined" && typeof window.api.i18nextElectronBackend === "undefined") {
             throw "'window.api.i18nextElectronBackend' is not defined! Be sure you are setting up your BrowserWindow's preload script properly!";
         }
 
@@ -111,9 +111,17 @@ class Backend {
         this.backendOptions = {
             ...defaultOptions,
             ...backendOptions,
-            i18nextElectronBackend: window.api.i18nextElectronBackend
+            i18nextElectronBackend: typeof window !== "undefined" ? window.api.i18nextElectronBackend : undefined
         };
         this.i18nextOptions = i18nextOptions;
+
+        // For cases we want to use this translator in the backend of Electron;
+        // ie menus and context menus, we need to be able to read/write translation
+        // files without using the window (it just doesn't exist!), so we dynamically
+        // import 'fs' here so that we are able to translate
+        if (typeof this.backendOptions.i18nextElectronBackend === "undefined") {
+            this.fs = require("fs");
+        }
 
         // log-related
         const logPrepend = "[i18next-electron-fs-backend:";
@@ -129,6 +137,10 @@ class Backend {
         const {
             i18nextElectronBackend
         } = this.backendOptions;
+
+        if (typeof i18nextElectronBackend === "undefined"){
+            return;
+        }
 
         i18nextElectronBackend.onReceive(readFileResponse, (args) => {
             // args:
@@ -211,45 +223,105 @@ class Backend {
         // for all changes within a given file
         let toWork = groupByArray(writeQueue, "filename");
 
-        for (let i = 0; i < toWork.length; i++) {
-            var anonymous = function (error, data) {
-                if (error) {
-                    console.error(`${this.rendererLog} encountered error when trying to read file '${filename}' before writing missing translation ('${key}'/'${fallbackValue}') to file. Please resolve this error so missing translation values can be written to file. Error: '${error}'.`);
-                    return;
-                }
-
-                let keySeparator = !!this.i18nextOptions.keySeparator; // Do we have a key separator or not?
-                let writeKeys = [];
-
-                for (let j = 0; j < toWork[i].values.length; j++) {
-
-                    // If we have no key separator set, simply update the translation value
-                    if (!keySeparator) {
-                        data[toWork[i].values[j].key] = toWork[i].values[j].fallbackValue;
-                    } else {
-                        // Created the nested object structure based on the key separator, and merge that
-                        // into the existing translation data
-                        data = mergeNested(data, toWork[i].values[j].key, this.i18nextOptions.keySeparator, toWork[i].values[j].fallbackValue);
+        if (typeof i18nextElectronBackend !== "undefined") {
+            // For when we are in the renderer process
+            for (let i = 0; i < toWork.length; i++) {
+                var anonymous = function (error, data) {
+                    if (error) {
+                        console.error(`${this.rendererLog} encountered error when trying to read file '${filename}' before writing missing translation ('${key}'/'${fallbackValue}') to file. Please resolve this error so missing translation values can be written to file. Error: '${error}'.`);
+                        return;
                     }
 
-                    let writeKey = `${UUID.generate()}`;
-                    if (toWork[i].values[j].callback) {
-                        this.writeCallbacks[writeKey] = {
-                            callback: toWork[i].values[j].callback
-                        };
-                        writeKeys.push(writeKey);
-                    }
-                }
+                    let keySeparator = !!this.i18nextOptions.keySeparator; // Do we have a key separator or not?
+                    let writeKeys = [];
 
-                // Send out the message to the ipcMain process
-                debug ? console.log(`${this.rendererLog} requesting the missing key '${key}' be written to file '${filename}'.`) : null;
-                i18nextElectronBackend.send(writeFileRequest, {
-                    keys: writeKeys,
-                    filename: toWork[i].key,
-                    data
+                    for (let j = 0; j < toWork[i].values.length; j++) {
+
+                        // If we have no key separator set, simply update the translation value
+                        if (!keySeparator) {
+                            data[toWork[i].values[j].key] = toWork[i].values[j].fallbackValue;
+                        } else {
+                            // Created the nested object structure based on the key separator, and merge that
+                            // into the existing translation data
+                            data = mergeNested(data, toWork[i].values[j].key, this.i18nextOptions.keySeparator, toWork[i].values[j].fallbackValue);
+                        }
+
+                        let writeKey = `${UUID.generate()}`;
+                        if (toWork[i].values[j].callback) {
+                            this.writeCallbacks[writeKey] = {
+                                callback: toWork[i].values[j].callback
+                            };
+                            writeKeys.push(writeKey);
+                        }
+                    }
+
+                    // Send out the message to the ipcMain process
+                    debug ? console.log(`${this.rendererLog} requesting the missing key '${key}' be written to file '${filename}'.`) : null;
+                    i18nextElectronBackend.send(writeFileRequest, {
+                        keys: writeKeys,
+                        filename: toWork[i].key,
+                        data
+                    });
+                }.bind(this);
+                this.requestFileRead(toWork[i].key, anonymous);
+            }
+        } else {
+            // For when we are in the main process
+            for (let i = 0; i < toWork.length; i++) {
+                fs.readFile(toWork[i].key, "utf8", (error, data) => {
+                    if (error) {
+                        console.error(`${this.rendererLog} encountered error when trying to read file '${filename}' before writing missing translation ('${key}'/'${fallbackValue}') to file. Please resolve this error so missing translation values can be written to file. Error: '${error}'.`);
+                        return;
+                    }
+
+                    let keySeparator = !!this.i18nextOptions.keySeparator; // Do we have a key separator or not?
+                    let writeCallbacks = [];
+
+                    for (let j = 0; j < toWork[i].values.length; j++) {
+
+                        // If we have no key separator set, simply update the translation value
+                        if (!keySeparator) {
+                            data[toWork[i].values[j].key] = toWork[i].values[j].fallbackValue;
+                        } else {
+                            // Created the nested object structure based on the key separator, and merge that
+                            // into the existing translation data
+                            data = mergeNested(data, toWork[i].values[j].key, this.i18nextOptions.keySeparator, toWork[i].values[j].fallbackValue);
+                        }
+
+                        if (toWork[i].values[j].callback) {
+                            writeCallbacks.push(toWork[i].values[j].callback);
+                        }
+                    }
+
+                    // Send out the message to the ipcMain process
+                    debug ? console.log(`${this.rendererLog} requesting the missing key '${key}' be written to file '${filename}'.`) : null;
+
+
+
+                    // https://stackoverflow.com/a/51721295/1837080
+                    let separator = "/";
+                    const windowsSeparator = "\\";
+                    if (toWork[i].key.includes(windowsSeparator)) separator = windowsSeparator;
+                    let root = toWork[i].key.slice(0, toWork[i].key.lastIndexOf(separator));
+
+                    this.fs.mkdir(root, {
+                        recursive: true
+                    }, (error) => {
+                        this.fs.writeFile(toWork[i].key, JSON.stringify(data), (error) => {
+
+                            if (error) {
+                                for (let k = 0; k < writeCallbacks.length; k++) {
+                                    writeCallbacks[k](error, false);
+                                }
+                            } else {
+                                for (let k = 0; k < writeCallbacks.length; k++) {
+                                    writeCallbacks[k](null, true);
+                                }
+                            }
+                        });
+                    });
                 });
-            }.bind(this);
-            this.requestFileRead(toWork[i].key, anonymous);
+            }
         }
     }
 
@@ -277,17 +349,37 @@ class Backend {
     // Reads a given translation file
     read(language, namespace, callback) {
         const {
-            loadPath
+            loadPath,
+            i18nextElectronBackend
         } = this.backendOptions;
-        let filename = this.services.interpolator.interpolate(loadPath, {
+        const filename = this.services.interpolator.interpolate(loadPath, {
             lng: language,
             ns: namespace
         });
 
-        this.requestFileRead(filename, (error, data) => {
-            if (error) return callback(error, false); // no retry
+        // Handle initImmediate option
+        if (this.i18nextOptions.initImmediate === false) {
+          try {
+            const data = this.fs.readFileSync(filename, {encoding: "utf8"})
             callback(null, data);
-        });
+          } catch (error) {
+            callback(error, false); // no retry
+          }
+          return;
+        }
+
+        if (typeof i18nextElectronBackend !== "undefined") {
+            this.requestFileRead(filename, (error, data) => {
+                if (error) return callback(error, false); // no retry
+                callback(null, data);
+            });
+        } else {
+            // We use 'fs' directly here since we do not have access to send ipc messages in the main electron process
+            this.fs.readFile(filename, "utf8", (error, data) => {
+                if (error) return callback(error, false); // no retry
+                callback(null, JSON.parse(data));
+            });
+        }
     }
 
     // Not implementing at this time
@@ -342,14 +434,14 @@ class Backend {
 
                 // Write writeQueue entries, then after,
                 // fill in any from the writeQueueOverflow
-                if (this.writeQueue.length > 0){
-                    this.write(cloneDeep(this.writeQueue));                    
+                if (this.writeQueue.length > 0) {
+                    this.write(cloneDeep(this.writeQueue));
                 }
                 this.writeQueue = cloneDeep(this.writeQueueOverflow);
                 this.writeQueueOverflow = [];
 
                 if (this.writeQueue.length === 0) {
-                    
+
                     // Clear timer
                     clearInterval(this.writeTimeout);
                     delete this.writeTimeout;
