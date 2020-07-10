@@ -55,7 +55,7 @@ export const mainBindings = function (ipcMain, browserWindow, fs) {
                 data: typeof data !== "undefined" && data !== null ? data.toString() : ""
             });
         }.bind(browserWindow);
-        fs.readFile(args.filename, callback);
+        fs.readFile(args.filename, "utf8", callback);
     });
 
     ipcMain.on(writeFileRequest, (IpcMainEvent, args) => {
@@ -103,7 +103,7 @@ class Backend {
     }
 
     init(services, backendOptions, i18nextOptions) {
-        if (typeof window.api.i18nextElectronBackend === "undefined") {
+        if (typeof window !== "undefined" && typeof window.api.i18nextElectronBackend === "undefined") {
             throw "'window.api.i18nextElectronBackend' is not defined! Be sure you are setting up your BrowserWindow's preload script properly!";
         }
 
@@ -111,7 +111,7 @@ class Backend {
         this.backendOptions = {
             ...defaultOptions,
             ...backendOptions,
-            i18nextElectronBackend: window.api.i18nextElectronBackend
+            i18nextElectronBackend: typeof window !== "undefined" ? window.api.i18nextElectronBackend : undefined
         };
         this.i18nextOptions = i18nextOptions;
 
