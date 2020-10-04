@@ -1,6 +1,12 @@
 # i18next-electron-fs-backend
 This is an i18next library designed to work with [secure-electron-template](https://github.com/reZach/secure-electron-template). The library is a rough copy of [i18next-node-fs-backend](https://github.com/i18next/i18next-node-fs-backend) but using IPC (inter-process-communication) to request a file be read or written from the electron's [main process](https://electronjs.org/docs/api/ipc-main). The translation files that are written are written synchronously, but this should not be a problem because you should be creating translation files in development only (translation files should already exist before deploying to production environments).
 
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=reZach_i18next-electron-fs-backend&metric=alert_status)](https://sonarcloud.io/dashboard?id=reZach_i18next-electron-fs-backend)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=reZach_i18next-electron-fs-backend&metric=security_rating)](https://sonarcloud.io/dashboard?id=reZach_i18next-electron-fs-backend)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=reZach_i18next-electron-fs-backend&metric=sqale_rating)](https://sonarcloud.io/dashboard?id=reZach_i18next-electron-fs-backend)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=reZach_i18next-electron-fs-backend&metric=bugs)](https://sonarcloud.io/dashboard?id=reZach_i18next-electron-fs-backend)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=reZach_i18next-electron-fs-backend&metric=vulnerabilities)](https://sonarcloud.io/dashboard?id=reZach_i18next-electron-fs-backend)
+
 ## How to install
 
 ### Install the package

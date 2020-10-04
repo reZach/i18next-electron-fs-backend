@@ -25,13 +25,13 @@ export const changeLanguageRequest = "ChangeLanguage-Request";
 export const preloadBindings = function (ipcRenderer) {
     return {
         send: (channel, data) => {
-            let validChannels = [readFileRequest, writeFileRequest];
+            const validChannels = [readFileRequest, writeFileRequest];
             if (validChannels.includes(channel)) {
                 ipcRenderer.send(channel, data);
             }
         },
         onReceive: (channel, func) => {
-            let validChannels = [readFileResponse, writeFileResponse];
+            const validChannels = [readFileResponse, writeFileResponse];
             if (validChannels.includes(channel)) {
                 // Deliberately strip event as it includes "sender"
                 ipcRenderer.on(channel, (event, args) => func(args));
@@ -48,7 +48,7 @@ export const preloadBindings = function (ipcRenderer) {
 // in order to set up the ipc main bindings
 export const mainBindings = function (ipcMain, browserWindow, fs) {
     ipcMain.on(readFileRequest, (IpcMainEvent, args) => {
-        let callback = function (error, data) {
+        const callback = function (error, data) {
             this.webContents.send(readFileResponse, {
                 key: args.key,
                 error,
@@ -59,7 +59,7 @@ export const mainBindings = function (ipcMain, browserWindow, fs) {
     });
 
     ipcMain.on(writeFileRequest, (IpcMainEvent, args) => {
-        let callback = function (error) {
+        const callback = function (error) {
             this.webContents.send(writeFileResponse, {
                 keys: args.keys,
                 error
@@ -71,11 +71,14 @@ export const mainBindings = function (ipcMain, browserWindow, fs) {
         let separator = "/";
         const windowsSeparator = "\\";
         if (args.filename.includes(windowsSeparator)) separator = windowsSeparator;
-        let root = args.filename.slice(0, args.filename.lastIndexOf(separator));
+        const root = args.filename.slice(0, args.filename.lastIndexOf(separator));
 
         fs.mkdir(root, {
             recursive: true
         }, (error) => {
+            if (error){
+                console.error(error);
+            }
             fs.writeFile(args.filename, JSON.stringify(args.data), callback);
         });
     });
@@ -96,7 +99,7 @@ class Backend {
 
         this.readCallbacks = {}; // Callbacks after reading a translation
         this.writeCallbacks = {}; // Callbacks after writing a missing translation
-        this.writeTimeout; // A timer that will initate writing missing translations to files
+        this.writeTimeout = undefined; // A timer that will initate writing missing translations to files
         this.writeQueue = []; // An array to hold missing translations before the writeTimeout occurs
         this.writeQueueOverflow = []; // An array to hold missing translations while the writeTimeout's items are being written to file
         this.useOverflow = false; // If true, we should insert missing translations into the writeQueueOverflow        
@@ -179,7 +182,7 @@ class Backend {
             //   error
             // }
 
-            let keys = args.keys;
+            const keys = args.keys;
             for (let i = 0; i < keys.length; i++) {
                 let callback;
 
@@ -209,16 +212,16 @@ class Backend {
 
         // Group by filename so we can make one request
         // for all changes within a given file
-        let toWork = groupByArray(writeQueue, "filename");
+        const toWork = groupByArray(writeQueue, "filename");
 
         for (let i = 0; i < toWork.length; i++) {
-            var anonymous = function (error, data) {
+            const anonymous = function (error, data) {
                 if (error) {
                     console.error(`${this.rendererLog} encountered error when trying to read file '${filename}' before writing missing translation ('${key}'/'${fallbackValue}') to file. Please resolve this error so missing translation values can be written to file. Error: '${error}'.`);
                     return;
                 }
 
-                let keySeparator = !!this.i18nextOptions.keySeparator; // Do we have a key separator or not?
+                const keySeparator = !!this.i18nextOptions.keySeparator; // Do we have a key separator or not?
                 let writeKeys = [];
 
                 for (let j = 0; j < toWork[i].values.length; j++) {
@@ -232,7 +235,7 @@ class Backend {
                         data = mergeNested(data, toWork[i].values[j].key, this.i18nextOptions.keySeparator, toWork[i].values[j].fallbackValue);
                     }
 
-                    let writeKey = `${UUID.generate()}`;
+                    const writeKey = `${UUID.generate()}`;
                     if (toWork[i].values[j].callback) {
                         this.writeCallbacks[writeKey] = {
                             callback: toWork[i].values[j].callback
@@ -242,7 +245,9 @@ class Backend {
                 }
 
                 // Send out the message to the ipcMain process
-                debug ? console.log(`${this.rendererLog} requesting the missing key '${key}' be written to file '${filename}'.`) : null;
+                if (debug) {
+                    console.log(`${this.rendererLog} requesting the missing key '${key}' be written to file '${filename}'.`);
+                }
                 i18nextElectronBackend.send(writeFileRequest, {
                     keys: writeKeys,
                     filename: toWork[i].key,
@@ -262,7 +267,7 @@ class Backend {
         // Save the callback for this request so we
         // can execute once the ipcRender process returns
         // with a value from the ipcMain process
-        let key = `${UUID.generate()}`;
+        const key = `${UUID.generate()}`;
         this.readCallbacks[key] = {
             callback
         };
@@ -279,7 +284,7 @@ class Backend {
         const {
             loadPath
         } = this.backendOptions;
-        let filename = this.services.interpolator.interpolate(loadPath, {
+        const filename = this.services.interpolator.interpolate(loadPath, {
             lng: language,
             ns: namespace
         });
