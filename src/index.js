@@ -14,14 +14,14 @@ const defaultOptions = {
     addPath: "/locales/{{lng}}/{{ns}}.missing.json" // Where the missing translation files get generated
 };
 // Electron-specific; must match mainIpc
-export const readFileRequest = "ReadFile-Request";
-export const writeFileRequest = "WriteFile-Request";
-export const readFileResponse = "ReadFile-Response";
-export const writeFileResponse = "WriteFile-Response";
-export const changeLanguageRequest = "ChangeLanguage-Request";
+export const readFileRequest = "readfile-request";
+export const writeFileRequest = "writefile-request";
+export const readFileResponse = "readfile-response";
+export const writeFileResponse = "writefile-response";
+export const changeLanguageRequest = "changelanguage-request";
 
 // This is the code that will go into the preload.js file
-// in order to set up the contextBridge api
+// in order to set up the contextBridge api (IF sandbox is not enabled)
 export const preloadBindings = function (ipcRenderer) {
     return {
         send: (channel, data) => {
@@ -43,6 +43,30 @@ export const preloadBindings = function (ipcRenderer) {
         }
     };
 };
+
+// This is the code that will go into the main.js file
+// in order to set up the contextBridge api (IF sandbox IS enabled).
+// This code NEEDS TO BE A COPY OF preloadBindings, with no
+// references to variables, since it can't have any dependencies
+export const preloadBindingsSandbox = (function (ipcRenderer) {
+    return {
+        send: (channel, data) => {
+            if (["readfile-request", "writefile-request"].includes(channel)) {
+                ipcRenderer.send(channel, data);
+            }
+        },
+        onReceive: (channel, func) => {
+            if (["readfile-response", "writefile-response"].includes(channel)) {
+                // Deliberately strip event as it includes "sender"
+                ipcRenderer.on(channel, (event, args) => func(args));
+            }
+        },
+        onLanguageChange: (func) => {
+            // Deliberately strip event as it includes "sender"
+            ipcRenderer.on("changelanguage-request", (event, args) => func(args));
+        }
+    };
+}).toString().replaceAll(" ", "\\s").replaceAll("\"", "'");
 
 // This is the code that will go into the main.js file
 // in order to set up the ipc main bindings
