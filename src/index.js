@@ -123,7 +123,7 @@ class Backend {
         this.mainLog = `${logPrepend}main]=>`;
         this.rendererLog = `${logPrepend}renderer]=>`;
 
-        if (typeof this.i18nextElectronBackend === "undefined"){
+        if (typeof this.backendOptions.i18nextElectronBackend === "undefined"){
             console.error(`${this.rendererLog} i18nextElectronBackend is undefined, please ensure you are exposing i18nextElectronBackend via the contextBridge in your preload file.`);
             return;
         }
