@@ -51,7 +51,7 @@ const backend = require("i18next-electron-fs-backend");
 
 contextBridge.exposeInMainWorld(
     "api", {
-        i18nextElectronBackend: backend.preloadBindings(ipcRenderer)
+        i18nextElectronBackend: backend.preloadBindings(ipcRenderer, process)
     }
 );
 ```

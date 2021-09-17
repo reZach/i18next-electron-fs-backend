@@ -6,6 +6,7 @@ import {
     mergeNested,
     groupByArray
 } from "./utils";
+const path = require("path");
 
 // CONFIGS
 const defaultOptions = {
@@ -22,7 +23,7 @@ export const changeLanguageRequest = "ChangeLanguage-Request";
 
 // This is the code that will go into the preload.js file
 // in order to set up the contextBridge api
-export const preloadBindings = function (ipcRenderer) {
+export const preloadBindings = function (ipcRenderer, process) {
     return {
         send: (channel, data) => {
             const validChannels = [readFileRequest, writeFileRequest];
@@ -40,6 +41,12 @@ export const preloadBindings = function (ipcRenderer) {
         onLanguageChange: (func) => {
             // Deliberately strip event as it includes "sender"
             ipcRenderer.on(changeLanguageRequest, (event, args) => func(args));
+        },
+        clientOptions: {
+            // Exposing values of [Node's] process for use in the client-side options
+            environment: process.env.NODE_ENV,
+            platform: process.platform,
+            resourcesPath: path.join(process.resourcesPath, "..")
         }
     };
 };
