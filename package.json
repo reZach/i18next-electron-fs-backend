@@ -1,6 +1,6 @@
 {
   "name": "i18next-electron-fs-backend",
-  "version": "1.4.0",
+  "version": "2.0.0",
   "description": "An i18next backend plugin that allows you to use local translation files for your electron app, following electron's best-security practices.",
   "main": "lib/index.js",
   "scripts": {
