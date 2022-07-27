@@ -35,12 +35,12 @@ export const preloadBindings = function (ipcRenderer, process) {
             const validChannels = [readFileResponse, writeFileResponse];
             if (validChannels.includes(channel)) {
                 // Deliberately strip event as it includes "sender"
-                ipcRenderer.on(channel, (event, args) => func(args));
+                ipcRenderer.on(channel, (_event, args) => func(args));
             }
         },
         onLanguageChange: (func) => {
             // Deliberately strip event as it includes "sender"
-            ipcRenderer.on(changeLanguageRequest, (event, args) => func(args));
+            ipcRenderer.on(changeLanguageRequest, (_event, args) => func(args));
         },
         clientOptions: {
             // Exposing values of [Node's] process for use in the client-side options
@@ -54,7 +54,7 @@ export const preloadBindings = function (ipcRenderer, process) {
 // This is the code that will go into the main.js file
 // in order to set up the ipc main bindings
 export const mainBindings = function (ipcMain, browserWindow, fs) {
-    ipcMain.on(readFileRequest, (IpcMainEvent, args) => {
+    ipcMain.on(readFileRequest, (_IpcMainEvent, args) => {
         const callback = function (error, data) {
             this.webContents.send(readFileResponse, {
                 key: args.key,
@@ -65,7 +65,7 @@ export const mainBindings = function (ipcMain, browserWindow, fs) {
         fs.readFile(args.filename, "utf8", callback);
     });
 
-    ipcMain.on(writeFileRequest, (IpcMainEvent, args) => {
+    ipcMain.on(writeFileRequest, (_IpcMainEvent, args) => {
         const callback = function (error) {
             this.webContents.send(writeFileResponse, {
                 keys: args.keys,
@@ -83,7 +83,7 @@ export const mainBindings = function (ipcMain, browserWindow, fs) {
         fs.mkdir(root, {
             recursive: true
         }, (error) => {
-            if (error){
+            if (error) {
                 console.error(error);
             }
             fs.writeFile(args.filename, JSON.stringify(args.data), callback);
@@ -113,15 +113,23 @@ class Backend {
     }
 
     init(services, backendOptions, i18nextOptions) {
-        if (typeof window !== "undefined" && typeof window.api.i18nextElectronBackend === "undefined") {
-            throw "'window.api.i18nextElectronBackend' is not defined! Be sure you are setting up your BrowserWindow's preload script properly!";
+
+        // Use "api" as the default contextBridge.exposeInMainWorld apiKey, otherwise
+        // use the value found in "backendOptions"
+        let contextBridgeApiKey = "api";
+        if (typeof backendOptions !== "undefined" && typeof backendOptions.contextBridgeApiKey !== "undefined") {
+            contextBridgeApiKey = backendOptions.contextBridgeApiKey;
+        }
+
+        if (typeof window !== "undefined" && typeof window[`${contextBridgeApiKey}`].i18nextElectronBackend === "undefined") {
+            throw new Error(`'window.${contextBridgeApiKey}.i18nextElectronBackend' is not defined! Be sure you are setting up your BrowserWindow's preload script properly!`);
         }
 
         this.services = services;
         this.backendOptions = {
             ...defaultOptions,
             ...backendOptions,
-            i18nextElectronBackend: typeof window !== "undefined" ? window.api.i18nextElectronBackend : undefined
+            i18nextElectronBackend: typeof window !== "undefined" ? window[`${contextBridgeApiKey}`].i18nextElectronBackend : undefined
         };
         this.i18nextOptions = i18nextOptions;
 
@@ -130,7 +138,7 @@ class Backend {
         this.mainLog = `${logPrepend}main]=>`;
         this.rendererLog = `${logPrepend}renderer]=>`;
 
-        if (typeof this.backendOptions.i18nextElectronBackend === "undefined"){
+        if (typeof this.backendOptions.i18nextElectronBackend === "undefined") {
             console.error(`${this.rendererLog} i18nextElectronBackend is undefined, please ensure you are exposing i18nextElectronBackend via the contextBridge in your preload file.`);
             return;
         }
@@ -308,8 +316,8 @@ class Backend {
     }
 
     // Not implementing at this time
-    readMulti(languages, namespaces, callback) {
-        throw "Not implemented exception.";
+    readMulti(_languages, _namespaces, _callback) {
+        throw new Error("Not implemented exception.");
     }
 
     // Writes a missing translation to file
@@ -359,14 +367,14 @@ class Backend {
 
                 // Write writeQueue entries, then after,
                 // fill in any from the writeQueueOverflow
-                if (this.writeQueue.length > 0){
-                    this.write(cloneDeep(this.writeQueue));                    
+                if (this.writeQueue.length > 0) {
+                    this.write(cloneDeep(this.writeQueue));
                 }
                 this.writeQueue = cloneDeep(this.writeQueueOverflow);
                 this.writeQueueOverflow = [];
 
                 if (this.writeQueue.length === 0) {
-                    
+
                     // Clear timer
                     clearInterval(this.writeTimeout);
                     delete this.writeTimeout;
