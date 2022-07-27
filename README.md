@@ -28,7 +28,7 @@ i18n
     backend: {
       loadPath: "./app/localization/locales/{{lng}}/{{ns}}.json",
       addPath: "./app/localization/locales/{{lng}}/{{ns}}.missing.json",
-      ipcRenderer: window.api.i18nextElectronBackend // important!
+      contextBridgeApiKey: "api" // needs to match first parameter of contextBridge.exposeInMainWorld in preload file; defaults to "api"
     },
 
     // other options you might configure
