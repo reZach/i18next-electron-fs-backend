@@ -6,7 +6,6 @@ import {
     mergeNested,
     groupByArray
 } from "./utils";
-const path = require("path");
 
 // CONFIGS
 const defaultOptions = {
@@ -46,7 +45,7 @@ export const preloadBindings = function (ipcRenderer, process) {
             // Exposing values of [Node's] process for use in the client-side options
             environment: process.env.NODE_ENV,
             platform: process.platform,
-            resourcesPath: path.join(process.resourcesPath, "..")
+            resourcesPath: process.resourcesPath !== undefined ? process.resourcesPath + `${process.platform === "win32" ? "\\.." : "/.."}` : undefined
         }
     };
 };
@@ -103,7 +102,6 @@ export const clearMainBindings = function (ipcMain) {
 class Backend {
     constructor(services, backendOptions = {}, i18nextOptions = {}) {
         this.init(services, backendOptions, i18nextOptions);
-
         this.readCallbacks = {}; // Callbacks after reading a translation
         this.writeCallbacks = {}; // Callbacks after writing a missing translation
         this.writeTimeout = undefined; // A timer that will initate writing missing translations to files
@@ -113,7 +111,6 @@ class Backend {
     }
 
     init(services, backendOptions, i18nextOptions) {
-
         // Use "api" as the default contextBridge.exposeInMainWorld apiKey, otherwise
         // use the value found in "backendOptions"
         let contextBridgeApiKey = "api";
@@ -121,7 +118,7 @@ class Backend {
             contextBridgeApiKey = backendOptions.contextBridgeApiKey;
         }
 
-        if (typeof window !== "undefined" && typeof window[`${contextBridgeApiKey}`].i18nextElectronBackend === "undefined") {
+        if (typeof window !== "undefined" && typeof window[`${contextBridgeApiKey}`] !== "undefined" && typeof window[`${contextBridgeApiKey}`].i18nextElectronBackend === "undefined") {
             throw new Error(`'window.${contextBridgeApiKey}.i18nextElectronBackend' is not defined! Be sure you are setting up your BrowserWindow's preload script properly!`);
         }
 
@@ -129,7 +126,7 @@ class Backend {
         this.backendOptions = {
             ...defaultOptions,
             ...backendOptions,
-            i18nextElectronBackend: typeof window !== "undefined" ? window[`${contextBridgeApiKey}`].i18nextElectronBackend : undefined
+            i18nextElectronBackend: typeof window !== "undefined" && typeof window[`${contextBridgeApiKey}`] !== "undefined" ? window[`${contextBridgeApiKey}`].i18nextElectronBackend : undefined
         };
         this.i18nextOptions = i18nextOptions;
 
@@ -139,7 +136,8 @@ class Backend {
         this.rendererLog = `${logPrepend}renderer]=>`;
 
         if (typeof this.backendOptions.i18nextElectronBackend === "undefined") {
-            console.error(`${this.rendererLog} i18nextElectronBackend is undefined, please ensure you are exposing i18nextElectronBackend via the contextBridge in your preload file.`);
+            // Since this is run twice if you use .init we can't be sure
+            // console.error(`${this.rendererLog} i18nextElectronBackend is undefined, please ensure you are exposing i18nextElectronBackend via the contextBridge in your preload file.`);
             return;
         }
 
