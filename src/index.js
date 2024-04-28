@@ -54,7 +54,7 @@ export const preloadBindings = function (ipcRenderer, process) {
 // This is the code that will go into the main.js file
 // in order to set up the ipc main bindings
 export const mainBindings = function (ipcMain, browserWindow, fs) {
-    ipcMain.on(readFileRequest, (_IpcMainEvent, args) => {
+    const onReadFileRequest = (_IpcMainEvent, args) => {
         const callback = function (error, data) {
             this.webContents.send(readFileResponse, {
                 key: args.key,
@@ -63,16 +63,14 @@ export const mainBindings = function (ipcMain, browserWindow, fs) {
             });
         }.bind(browserWindow);
         fs.readFile(args.filename, "utf8", callback);
-    });
-
-    ipcMain.on(writeFileRequest, (_IpcMainEvent, args) => {
+    };
+    const onWriteFileRequest = (_IpcMainEvent, args) => {
         const callback = function (error) {
             this.webContents.send(writeFileResponse, {
                 keys: args.keys,
                 error
             });
         }.bind(browserWindow);
-
 
         // https://stackoverflow.com/a/51721295/1837080
         let separator = "/";
@@ -88,6 +86,14 @@ export const mainBindings = function (ipcMain, browserWindow, fs) {
             }
             fs.writeFile(args.filename, JSON.stringify(args.data), callback);
         });
+    };
+
+    ipcMain.on(readFileRequest, onReadFileRequest);
+    ipcMain.on(writeFileRequest, onWriteFileRequest);
+
+    browserWindow.on("closed", () => {
+        ipcMain.off(readFileRequest, onReadFileRequest);
+        ipcMain.off(writeFileRequest, onWriteFileRequest);
     });
 };
 
