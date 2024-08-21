@@ -108,17 +108,17 @@ export const clearMainBindings = function (ipcMain) {
 // also took code from: https://github.com/i18next/i18next-node-fs-backend
 class Backend {
     constructor(services, backendOptions = {}, i18nextOptions = {}) {
-        this.init(services, backendOptions, i18nextOptions);
+        this.init(services, backendOptions, i18nextOptions, true);
 
         this.readCallbacks = {}; // Callbacks after reading a translation
         this.writeCallbacks = {}; // Callbacks after writing a missing translation
         this.writeTimeout = undefined; // A timer that will initate writing missing translations to files
         this.writeQueue = []; // An array to hold missing translations before the writeTimeout occurs
         this.writeQueueOverflow = []; // An array to hold missing translations while the writeTimeout's items are being written to file
-        this.useOverflow = false; // If true, we should insert missing translations into the writeQueueOverflow        
+        this.useOverflow = false; // If true, we should insert missing translations into the writeQueueOverflow
     }
 
-    init(services, backendOptions, i18nextOptions) {
+    init(services, backendOptions, i18nextOptions, skipChecks) {
 
         // Use "api" as the default contextBridge.exposeInMainWorld apiKey, otherwise
         // use the value found in "backendOptions"
@@ -127,7 +127,7 @@ class Backend {
             contextBridgeApiKey = backendOptions.contextBridgeApiKey;
         }
 
-        if (typeof window !== "undefined" && typeof window[`${contextBridgeApiKey}`].i18nextElectronBackend === "undefined") {
+        if (!skipChecks && typeof window !== "undefined" && typeof window[`${contextBridgeApiKey}`].i18nextElectronBackend === "undefined") {
             throw new Error(`'window.${contextBridgeApiKey}.i18nextElectronBackend' is not defined! Be sure you are setting up your BrowserWindow's preload script properly!`);
         }
 
@@ -145,11 +145,13 @@ class Backend {
         this.rendererLog = `${logPrepend}renderer]=>`;
 
         if (typeof this.backendOptions.i18nextElectronBackend === "undefined") {
-            console.error(`${this.rendererLog} i18nextElectronBackend is undefined, please ensure you are exposing i18nextElectronBackend via the contextBridge in your preload file.`);
-            return;
+            if (!skipChecks) {
+                console.error(`${this.rendererLog} i18nextElectronBackend is undefined, please ensure you are exposing i18nextElectronBackend via the contextBridge in your preload file.`);
+                return;
+            }
+        } else {
+            this.setupIpcBindings();
         }
-
-        this.setupIpcBindings();
     }
 
     // Sets up Ipc bindings so that we can keep any node-specific
