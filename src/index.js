@@ -6,7 +6,6 @@ import {
     mergeNested,
     groupByArray
 } from "./utils";
-const path = require("path");
 
 // CONFIGS
 const defaultOptions = {
@@ -20,6 +19,17 @@ export const writeFileRequest = "WriteFile-Request";
 export const readFileResponse = "ReadFile-Response";
 export const writeFileResponse = "WriteFile-Response";
 export const changeLanguageRequest = "ChangeLanguage-Request";
+
+// Importing path no longer seems to work with
+// more recent Electron versions, so we are doing
+// this manually
+const getParentFolder = function(directory){
+    let separator = process.platform === "win32" ? "\\" : "/";
+
+    let split = directory.split(separator);
+    split.pop();
+    return split.join(separator);
+}
 
 // This is the code that will go into the preload.js file
 // in order to set up the contextBridge api
@@ -46,7 +56,7 @@ export const preloadBindings = function (ipcRenderer, process) {
             // Exposing values of [Node's] process for use in the client-side options
             environment: process.env.NODE_ENV,
             platform: process.platform,
-            resourcesPath: path.join(process.resourcesPath, "..")
+            resourcesPath: getParentFolder(process.resourcesPath)
         }
     };
 };
@@ -127,7 +137,7 @@ class Backend {
             contextBridgeApiKey = backendOptions.contextBridgeApiKey;
         }
 
-        if (typeof window !== "undefined" && typeof window[`${contextBridgeApiKey}`].i18nextElectronBackend === "undefined") {
+        if (typeof window !== "undefined" && typeof window[`${contextBridgeApiKey}`] !== "undefined" && typeof window[`${contextBridgeApiKey}`].i18nextElectronBackend === "undefined") {
             throw new Error(`'window.${contextBridgeApiKey}.i18nextElectronBackend' is not defined! Be sure you are setting up your BrowserWindow's preload script properly!`);
         }
 
@@ -135,7 +145,7 @@ class Backend {
         this.backendOptions = {
             ...defaultOptions,
             ...backendOptions,
-            i18nextElectronBackend: typeof window !== "undefined" ? window[`${contextBridgeApiKey}`].i18nextElectronBackend : undefined
+            i18nextElectronBackend: typeof window !== "undefined" && typeof window[`${contextBridgeApiKey}`] !== "undefined" ? window[`${contextBridgeApiKey}`].i18nextElectronBackend : undefined
         };
         this.i18nextOptions = i18nextOptions;
 

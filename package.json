@@ -1,6 +1,6 @@
 {
   "name": "i18next-electron-fs-backend",
-  "version": "3.0.3",
+  "version": "4.0.0",
   "description": "An i18next backend plugin that allows you to use local translation files for your electron app, following electron's best-security practices.",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -20,9 +20,9 @@
   },
   "homepage": "https://github.com/reZach/i18next-electron-fs-backend#readme",
   "devDependencies": {
-    "@babel/cli": "^7.23.0",
-    "@babel/core": "^7.23.2",
-    "@babel/preset-env": "^7.23.2",
+    "@babel/cli": "^7.28.6",
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.2",
     "babel-preset-minify": "^0.5.2",
     "typescript": "^5.7.2"
   },
